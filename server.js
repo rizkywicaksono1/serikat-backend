@@ -23,6 +23,7 @@ app.use(express.json());
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ Berhasil terhubung ke MongoDB Atlas'))
   .catch((err) => console.log('🔴 Gagal terhubung ke database:', err));
+mongoose.connect(process.env.MONGO_URI)
 
 // Mongoose Schema & Model
 const TransactionSchema = new mongoose.Schema({
