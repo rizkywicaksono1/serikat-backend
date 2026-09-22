@@ -12,18 +12,15 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB Connection
-//const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/serikat_pekerja';
+const mongoURI = process.env.MONGO_URI;
 
-//mongoose.connect(MONGODB_URI, {
-  //  useNewUrlParser: true,
-    //useUnifiedTopology: true,
-//})
-//.then(() => console.log('🟢 Connected to MongoDB Atlas'))
-//.catch(err => console.error('🔴 MongoDB Connection Error:', err));
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('✅ Berhasil terhubung ke MongoDB Atlas'))
-  .catch((err) => console.log('🔴 Gagal terhubung ke database:', err));
-mongoose.connect(process.env.MONGO_URI)
+if (!mongoURI) {
+    console.error('🔴 ERROR: Environment variable MONGO_URI belum diatur di Render!');
+} else {
+    mongoose.connect(mongoURI)
+        .then(() => console.log('✅ Berhasil terhubung ke MongoDB Atlas'))
+        .catch((err) => console.error('🔴 Gagal terhubung ke database:', err.message));
+}
 
 // Mongoose Schema & Model
 const TransactionSchema = new mongoose.Schema({
@@ -45,7 +42,6 @@ const normalizeSheetsUrl = (rawUrl) => {
     if (!rawUrl) return '';
     let url = rawUrl.trim();
     if (url.includes('/spreadsheets/d/') && (url.includes('/edit') || url.includes('/view'))) {
-        // PERBAIKAN: Menambahkan backslash (\) agar // tidak dibaca sebagai komentar
         url = url.replace(/\/(edit|view).*$/, '/export?format=csv');
     }
     if (url.includes('/pubhtml')) {
@@ -56,11 +52,11 @@ const normalizeSheetsUrl = (rawUrl) => {
 
 // Universal Date Parser (Supports DD/MM/YYYY, YYYY-MM-DD, M/D/YY)
 const parseAnyDate = (raw) => {
-    if (!raw) return '';
-    let str = String(raw).trim().replace(/^"|"$/g, '');
-    const parts = str.split(/[\/.-]/);
-    if (parts.length === 3) {
-        let p1 = parseInt(parts[0], 10);
+    if (!raw) return '';
+    let str = String(raw).trim().replace(/^"|"$/g, '');
+    const parts = str.split(/[\/.-]/);
+    if (parts.length === 3) {
+        let p1 = parseInt(parts[0], 10);
         let p2 = parseInt(parts[1], 10);
         let p3 = parseInt(parts[2], 10);
 
@@ -114,7 +110,7 @@ const parseCSVToTransactions = (csvText) => {
     const delimiter = lines[0].includes(';') ? ';' : ',';
     const parsedData = [];
 
-    // Check if line 1 is header
+    // Check if line 0 is header
     const line0Cols = parseCSVLine(lines[0], delimiter);
     const isHeaderLine0 = line0Cols.some(col => 
         /tanggal|date|tipe|type|kategori|category|keterangan|deskripsi|nominal|jumlah|amount/i.test(col)
@@ -184,7 +180,6 @@ app.post('/api/finances/sync-sheets', async (req, res) => {
         const csvUrl = normalizeSheetsUrl(sheetUrl);
         console.log(`📡 Fetching CSV directly from server: ${csvUrl}`);
 
-        // Server-side HTTP Fetch using Axios (Bypasses CORS entirely)
         const response = await axios.get(csvUrl, {
             timeout: 10000,
             headers: {
@@ -201,7 +196,6 @@ app.post('/api/finances/sync-sheets', async (req, res) => {
             });
         }
 
-        // Option: Replace all synced Google Sheets data in MongoDB
         await Transaction.deleteMany({ source: 'sheets' });
         const savedData = await Transaction.insertMany(transactions);
 
@@ -245,7 +239,7 @@ app.delete('/api/finances', async (req, res) => {
     }
 });
 
-// PERBAIKAN: Menambahkan `0.0.0.0` (khusus Render) & perbaikan backtick pada console.log
+// Server listener
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server berjalan di port ${PORT}`);
 });
