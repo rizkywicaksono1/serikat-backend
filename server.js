@@ -52,11 +52,11 @@ const normalizeSheetsUrl = (rawUrl) => {
 
 // Universal Date Parser (Supports DD/MM/YYYY, YYYY-MM-DD, M/D/YY)
 const parseAnyDate = (raw) => {
-    if (!raw) return '';
-    let str = String(raw).trim().replace(/^"|"$/g, '');
-    const parts = str.split(/[/-.]/);
-    if (parts.length === 3) {
-        let p1 = parseInt(parts[0], 10);
+    if (!raw) return '';
+    let str = String(raw).trim().replace(/^"|"$/g, '');
+    const parts = str.split(/[\/.-]/);
+    if (parts.length === 3) {
+        let p1 = parseInt(parts[0], 10);
         let p2 = parseInt(parts[1], 10);
         let p3 = parseInt(parts[2], 10);
 
