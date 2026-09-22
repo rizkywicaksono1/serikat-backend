@@ -12,14 +12,17 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/serikat_pekerja';
+//const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/serikat_pekerja';
 
-mongoose.connect(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-})
-.then(() => console.log('🟢 Connected to MongoDB Atlas'))
-.catch(err => console.error('🔴 MongoDB Connection Error:', err));
+//mongoose.connect(MONGODB_URI, {
+  //  useNewUrlParser: true,
+    //useUnifiedTopology: true,
+//})
+//.then(() => console.log('🟢 Connected to MongoDB Atlas'))
+//.catch(err => console.error('🔴 MongoDB Connection Error:', err));
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('✅ Berhasil terhubung ke MongoDB Atlas'))
+  .catch((err) => console.log('🔴 Gagal terhubung ke database:', err));
 
 // Mongoose Schema & Model
 const TransactionSchema = new mongoose.Schema({
