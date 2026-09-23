@@ -3,8 +3,16 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
-
 const app = express();
+
+// server.js
+let appSettings = {}; // atau simpan sebagai koleksi Mongoose kalau mau lebih permanen
+
+app.get('/api/settings/sync-url', (req, res) => res.json({ syncUrl: appSettings.syncUrl || '' }));
+app.post('/api/settings/sync-url', (req, res) => {
+    appSettings.syncUrl = req.body.syncUrl;
+    res.json({ ok: true });
+});
 
 // Middleware
 app.use(cors()); // Mengizinkan Frontend mengakses Backend
