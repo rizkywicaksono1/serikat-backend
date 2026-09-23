@@ -13,6 +13,75 @@ app.post('/api/settings/sync-url', (req, res) => {
     appSettings.syncUrl = req.body.syncUrl;
     res.json({ ok: true });
 });
+// Schema User (anggota + admin)
+const userSchema = new mongoose.Schema({
+    id: { type: String, required: true, unique: true },   // ID Anggota
+    password: { type: String, required: true },           // sebaiknya di-hash, lihat catatan di bawah
+    name: String,
+    role: { type: String, default: 'user' },               // 'admin' atau 'user'
+    department: String,
+    position: String,
+    phone: String,
+    email: String,
+    status: { type: String, default: 'aktif' }
+});
+const User = mongoose.model('User', userSchema);
+
+// LOGIN
+app.post('/api/login', async (req, res) => {
+    try {
+        const { id, password } = req.body;
+        const user = await User.findOne({ id, password });
+        if (!user) return res.status(401).json({ error: 'ID Anggota atau Password salah' });
+        if (user.status !== 'aktif') return res.status(403).json({ error: 'Akun tidak aktif' });
+
+        // Jangan kirim password balik ke frontend
+        const { password: _, ...safeUser } = user.toObject();
+        res.json(safeUser);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Terjadi kesalahan server' });
+    }
+});
+
+// AMBIL SEMUA ANGGOTA
+app.get('/api/members', async (req, res) => {
+    try {
+        const members = await User.find({}, '-password'); // exclude password
+        res.json(members);
+    } catch (err) {
+        res.status(500).json({ error: 'Gagal mengambil data anggota' });
+    }
+});
+
+// TAMBAH ANGGOTA BARU
+app.post('/api/members', async (req, res) => {
+    try {
+        const exists = await User.findOne({ id: req.body.id });
+        if (exists) return res.status(400).json({ error: 'ID Anggota sudah dipakai' });
+
+        const newUser = await User.create(req.body);
+        const { password, ...safeUser } = newUser.toObject();
+        res.json(safeUser);
+    } catch (err) {
+        res.status(500).json({ error: 'Gagal menambah anggota' });
+    }
+});
+
+// TOGGLE STATUS AKTIF/NONAKTIF
+app.patch('/api/members/:id/toggle-status', async (req, res) => {
+    try {
+        const user = await User.findOne({ id: req.params.id });
+        if (!user) return res.status(404).json({ error: 'Anggota tidak ditemukan' });
+
+        user.status = user.status === 'aktif' ? 'nonaktif' : 'aktif';
+        await user.save();
+        const { password, ...safeUser } = user.toObject();
+        res.json(safeUser);
+    } catch (err) {
+        res.status(500).json({ error: 'Gagal mengubah status' });
+    }
+});
 
 // Middleware
 app.use(cors()); // Mengizinkan Frontend mengakses Backend
