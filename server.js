@@ -44,16 +44,17 @@ app.get('/api/finances', async (req, res) => {
 });
 
 // 2. Menambah data keuangan baru (POST)
-app.post('/api/finances', async (req, res) => {
+app.post('/api/finances/bulk-replace', async (req, res) => {
     try {
-        const newFinance = new Finance(req.body);
-        const savedFinance = await newFinance.save();
-        res.status(201).json(savedFinance);
+        const newData = req.body; // array of transactions dari frontend
+        await Finance.deleteMany({});      // hapus semua data lama
+        const inserted = await Finance.insertMany(newData); // masukkan data baru dari spreadsheet
+        res.json(inserted);
     } catch (err) {
-        res.status(400).json({ message: err.message });
+        console.error(err);
+        res.status(500).json({ error: 'Gagal sinkronisasi data' });
     }
 });
-
 // Jalankan Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
