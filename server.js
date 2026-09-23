@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 const app = express();
+const API_BASE = 'https://serikat-backend.onrender.com/api'; // ganti sesuai domain backend kamu
 
 // server.js
 let appSettings = {}; // atau simpan sebagai koleksi Mongoose kalau mau lebih permanen
