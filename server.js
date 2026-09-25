@@ -99,6 +99,21 @@ app.post('/api/login', async (req, res) => {
         res.status(500).json({ error: 'Terjadi kesalahan server' });
     }
 });
+// Tambah 1 transaksi keuangan baru
+app.post('/api/finances', async (req, res) => {
+    try {
+        const { date, type, category, desc, amount, status } = req.body;
+        const [result] = await pool.query(
+            'INSERT INTO finances (date, type, category, `desc`, amount, status) VALUES (?, ?, ?, ?, ?, ?)',
+            [date || '', type || '', category || '', desc || '', Number(amount) || 0, status || 'Selesai']
+        );
+        res.json({ id: result.insertId, ...req.body });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Gagal menambah transaksi' });
+    }
+});
+
 
 // AMBIL SEMUA ANGGOTA (tanpa password)
 app.get('/api/members', async (req, res) => {
