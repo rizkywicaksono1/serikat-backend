@@ -53,6 +53,29 @@ app.get('/api/settings/sync-url', async (req, res) => {
         res.status(500).json({ error: 'Gagal mengambil sync URL' });
     }
 });
+// HAPUS SEMUA DATA KEUANGAN
+app.delete('/api/finances', async (req, res) => {
+    try {
+        await pool.query('DELETE FROM finances');
+        res.json({ success: true, message: 'Semua data keuangan berhasil dihapus' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Gagal menghapus data keuangan' });
+    }
+});
+
+// HAPUS ANGGOTA BERDASARKAN ID
+app.delete('/api/members/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await pool.query('DELETE FROM users WHERE id = ?', [id]);
+        res.json({ success: true, message: 'Anggota berhasil dihapus' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Gagal menghapus anggota' });
+    }
+});
+
 
 // Simpan Sync URL
 app.post('/api/settings/sync-url', async (req, res) => {
