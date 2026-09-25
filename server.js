@@ -1,43 +1,94 @@
 // server.js
 const express = require('express');
-const mongoose = require('mongoose');
+const mysql = require('mysql2/promise');
 const cors = require('cors');
 require('dotenv').config();
+
 const app = express();
-const API_BASE = 'https://serikat-backend.onrender.com/api'; // ganti sesuai domain backend kamu
 
-// server.js
-let appSettings = {}; // atau simpan sebagai koleksi Mongoose kalau mau lebih permanen
+// Middleware (wajib sebelum rute)
+app.use(cors());
+app.use(express.json());
 
-app.get('/api/settings/sync-url', (req, res) => res.json({ syncUrl: appSettings.syncUrl || '' }));
-app.post('/api/settings/sync-url', (req, res) => {
-    appSettings.syncUrl = req.body.syncUrl;
-    res.json({ ok: true });
+// Konfigurasi MySQL Connection Pool
+const pool = mysql.createPool({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'serikat_db',
+    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
-// Schema User (anggota + admin)
-const userSchema = new mongoose.Schema({
-    id: { type: String, required: true, unique: true },   // ID Anggota
-    password: { type: String, required: true },           // sebaiknya di-hash, lihat catatan di bawah
-    name: String,
-    role: { type: String, default: 'user' },               // 'admin' atau 'user'
-    department: String,
-    position: String,
-    phone: String,
-    email: String,
-    status: { type: String, default: 'aktif' }
+
+// Uji koneksi ke database saat server mulai
+(async () => {
+    try {
+        const connection = await pool.getConnection();
+        console.log('✅ Terhubung ke MySQL');
+        connection.release();
+    } catch (err) {
+        console.error('❌ Gagal koneksi ke MySQL:', err.message);
+    }
+})();
+
+// ==================== 1. SETTINGS ====================
+
+// Ambil Sync URL
+app.get('/api/settings/sync-url', async (req, res) => {
+    try {
+        const [rows] = await pool.query(
+            'SELECT setting_value FROM app_settings WHERE setting_key = ?',
+            ['syncUrl']
+        );
+        const syncUrl = rows.length > 0 ? rows[0].setting_value : '';
+        res.json({ syncUrl });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Gagal mengambil sync URL' });
+    }
 });
-const User = mongoose.model('User', userSchema);
+
+// Simpan Sync URL
+app.post('/api/settings/sync-url', async (req, res) => {
+    try {
+        const syncUrl = req.body.syncUrl || '';
+        await pool.query(
+            `INSERT INTO app_settings (setting_key, setting_value) 
+             VALUES ('syncUrl', ?) 
+             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+            [syncUrl]
+        );
+        res.json({ ok: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Gagal menyimpan sync URL' });
+    }
+});
+
+// ==================== 2. USERS & ANGGOTA ====================
 
 // LOGIN
 app.post('/api/login', async (req, res) => {
     try {
         const { id, password } = req.body;
-        const user = await User.findOne({ id, password });
-        if (!user) return res.status(401).json({ error: 'ID Anggota atau Password salah' });
-        if (user.status !== 'aktif') return res.status(403).json({ error: 'Akun tidak aktif' });
+        const [rows] = await pool.query(
+            `SELECT id, name, role, department, position, phone, email, status, password 
+             FROM users WHERE id = ? AND password = ?`,
+            [id, password]
+        );
 
-        // Jangan kirim password balik ke frontend
-        const { password: _, ...safeUser } = user.toObject();
+        if (rows.length === 0) {
+            return res.status(401).json({ error: 'ID Anggota atau Password salah' });
+        }
+
+        const user = rows[0];
+        if (user.status !== 'aktif') {
+            return res.status(403).json({ error: 'Akun tidak aktif' });
+        }
+
+        const { password: _, ...safeUser } = user;
         res.json(safeUser);
     } catch (err) {
         console.error(err);
@@ -45,12 +96,16 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// AMBIL SEMUA ANGGOTA
+// AMBIL SEMUA ANGGOTA (tanpa password)
 app.get('/api/members', async (req, res) => {
     try {
-        const members = await User.find({}, '-password'); // exclude password
+        const [members] = await pool.query(
+            `SELECT id, name, role, department, position, phone, email, status, created_at 
+             FROM users ORDER BY name ASC`
+        );
         res.json(members);
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: 'Gagal mengambil data anggota' });
     }
 });
@@ -58,81 +113,121 @@ app.get('/api/members', async (req, res) => {
 // TAMBAH ANGGOTA BARU
 app.post('/api/members', async (req, res) => {
     try {
-        const exists = await User.findOne({ id: req.body.id });
-        if (exists) return res.status(400).json({ error: 'ID Anggota sudah dipakai' });
+        const { id, password, name, role, department, position, phone, email, status } = req.body;
 
-        const newUser = await User.create(req.body);
-        const { password, ...safeUser } = newUser.toObject();
-        res.json(safeUser);
+        // Cek apakah ID sudah ada
+        const [existing] = await pool.query('SELECT id FROM users WHERE id = ?', [id]);
+        if (existing.length > 0) {
+            return res.status(400).json({ error: 'ID Anggota sudah dipakai' });
+        }
+
+        await pool.query(
+            `INSERT INTO users (id, password, name, role, department, position, phone, email, status) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                id,
+                password || 'user123',
+                name || '',
+                role || 'user',
+                department || '',
+                position || '',
+                phone || '',
+                email || '',
+                status || 'aktif'
+            ]
+        );
+
+        res.json({
+            id,
+            name,
+            role: role || 'user',
+            department,
+            position,
+            phone,
+            email,
+            status: status || 'aktif'
+        });
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: 'Gagal menambah anggota' });
     }
 });
 
-// TOGGLE STATUS AKTIF/NONAKTIF
+// TOGGLE STATUS AKTIF / NONAKTIF
 app.patch('/api/members/:id/toggle-status', async (req, res) => {
     try {
-        const user = await User.findOne({ id: req.params.id });
-        if (!user) return res.status(404).json({ error: 'Anggota tidak ditemukan' });
+        const memberId = req.params.id;
 
-        user.status = user.status === 'aktif' ? 'nonaktif' : 'aktif';
-        await user.save();
-        const { password, ...safeUser } = user.toObject();
+        const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [memberId]);
+        if (rows.length === 0) {
+            return res.status(404).json({ error: 'Anggota tidak ditemukan' });
+        }
+
+        const currentStatus = rows[0].status;
+        const newStatus = currentStatus === 'aktif' ? 'nonaktif' : 'aktif';
+
+        await pool.query('UPDATE users SET status = ? WHERE id = ?', [newStatus, memberId]);
+
+        const { password: _, ...safeUser } = rows[0];
+        safeUser.status = newStatus;
         res.json(safeUser);
     } catch (err) {
+        console.error(err);
         res.status(500).json({ error: 'Gagal mengubah status' });
     }
 });
 
-// Middleware
-app.use(cors()); // Mengizinkan Frontend mengakses Backend
-app.use(express.json()); // Agar bisa menerima format JSON
+// ==================== 3. KEUANGAN ====================
 
-// URI Database (Gunakan 127.0.0.1 untuk menghindari isu IPv6 Node.js v17+)
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/serikat_db';
-
-// Koneksi ke Database MongoDB (Mongoose v6+ tidak memerlukan useNewUrlParser/useUnifiedTopology)
-mongoose.connect(MONGO_URI)
-.then(() => console.log('✅ Terhubung ke MongoDB'))
-.catch(err => {
-    console.error('❌ Gagal koneksi DB:', err.message);
-});
-
-// --- BIKIN SKEMA DATABASE (TABLE) ---
-const FinanceSchema = new mongoose.Schema({
-    date: String,
-    type: String,
-    category: String,
-    desc: String,
-    amount: Number,
-    status: { type: String, default: 'Selesai' }
-});
-const Finance = mongoose.model('Finance', FinanceSchema);
-
-// --- BIKIN JALUR API (ROUTES) ---
-
-// 1. Mengambil semua data keuangan (GET)
+// Ambil semua transaksi keuangan
 app.get('/api/finances', async (req, res) => {
     try {
-        const finances = await Finance.find().sort({ date: -1 }); // urutkan dari terbaru
-        res.json(finances);
+        const [rows] = await pool.query('SELECT * FROM finances ORDER BY date DESC, id DESC');
+        res.json(rows);
     } catch (err) {
+        console.error(err);
         res.status(500).json({ message: err.message });
     }
 });
 
-// 2. Menambah data keuangan baru (POST)
+// Sinkronisasi data keuangan massal (hapus lama, ganti data baru)
 app.post('/api/finances/bulk-replace', async (req, res) => {
+    const connection = await pool.getConnection();
     try {
-        const newData = req.body; // array of transactions dari frontend
-        await Finance.deleteMany({});      // hapus semua data lama
-        const inserted = await Finance.insertMany(newData); // masukkan data baru dari spreadsheet
-        res.json(inserted);
+        const newData = req.body; // array data keuangan
+        await connection.beginTransaction();
+
+        // Kosongkan data lama
+        await connection.query('DELETE FROM finances');
+
+        // Masukkan data baru jika ada
+        if (Array.isArray(newData) && newData.length > 0) {
+            const values = newData.map(item => [
+                item.date || '',
+                item.type || '',
+                item.category || '',
+                item.desc || '',
+                Number(item.amount) || 0,
+                item.status || 'Selesai'
+            ]);
+
+            await connection.query(
+                'INSERT INTO finances (date, type, category, `desc`, amount, status) VALUES ?',
+                [values]
+            );
+        }
+
+        await connection.commit();
+        res.json({ success: true, count: Array.isArray(newData) ? newData.length : 0 });
     } catch (err) {
+        await connection.rollback();
         console.error(err);
-        res.status(500).json({ error: 'Gagal sinkronisasi data' });
+        res.status(500).json({ error: 'Gagal sinkronisasi data keuangan' });
+    } finally {
+        connection.release();
     }
 });
+
 // Jalankan Server
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
