@@ -221,6 +221,34 @@ app.patch('/api/members/:id/toggle-status', async (req, res) => {
 
 // ==================== 3. KEUANGAN ====================
 
+// Hapus 1 data transaksi berdasarkan ID
+app.delete('/api/finances/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await pool.query('DELETE FROM finances WHERE id = ?', [id]);
+        res.json({ success: true, message: 'Transaksi berhasil dihapus' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Gagal menghapus data' });
+    }
+});
+
+// Hapus banyak data sekaligus (checklist / massal)
+app.post('/api/finances/bulk-delete', async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Daftar ID tidak valid' });
+        }
+        await pool.query('DELETE FROM finances WHERE id IN (?)', [ids]);
+        res.json({ success: true, count: ids.length, message: `${ids.length} data berhasil dihapus` });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Gagal menghapus data massal' });
+    }
+});
+
+
 // Ambil semua transaksi keuangan
 app.get('/api/finances', async (req, res) => {
     try {
